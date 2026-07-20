@@ -1,83 +1,124 @@
-# Guía del Estudiante: Laboratorios de Process Injection
+# Guía Avanzada del Estudiante: Debugging y Análisis de Process Injection
 
-Bienvenido al entorno de pruebas. Abre el emulador de terminal (Terminal Emulator) en el escritorio para comenzar.
+Bienvenido al laboratorio de Threat Hunting. Esta guía te enseñará paso a paso no solo cómo ejecutar las técnicas de inyección, sino **cómo observar el comportamiento de la memoria y los procesos en tiempo real** utilizando las herramientas gráficas y de consola preinstaladas.
 
-## Laboratorio 1: Ptrace Injection (Equivalente a T1055.001 / T1055.003)
+Para comenzar, abre tu navegador web y entra a `http://localhost:8080`. Ingresa la contraseña `infected`.
+Una vez en el escritorio XFCE, abre **tres ventanas de terminal** (Terminal Emulator).
 
-En este laboratorio usaremos `ptrace` para adjuntarnos a un proceso legítimo en ejecución, modificar su puntero de instrucción (RIP) e inyectar un shellcode malicioso en su memoria.
+---
 
-1. **Compilar el código:**
-   ```bash
-   cd ~/lab/src/lab1_ptrace
-   make
-   ```
+## Laboratorio 1: Ptrace Injection (T1055.001 / T1055.003)
 
-2. **Ejecutar el proceso objetivo (Víctima):**
-   Abre una terminal y ejecuta:
-   ```bash
-   ./target
-   ```
-   *Toma nota del PID que aparece en pantalla.*
+En este laboratorio inyectaremos código en un proceso en ejecución y usaremos herramientas para ver el cambio exacto en la memoria.
 
-3. **Inyectar el código (Atacante):**
-   Abre una **segunda terminal** y ejecuta el inyector pasando el PID del objetivo:
-   ```bash
-   sudo ./ptrace_inject <PID_DEL_TARGET>
-   ```
+### Paso 1: Preparación
+En la **Terminal 1**, compila el código:
+```bash
+cd ~/lab/src/lab1_ptrace
+make
+```
 
-4. **Análisis:**
-   - Observa la terminal del proceso objetivo. Verás que el flujo de ejecución fue secuestrado y ahora está ejecutando el shellcode (en este caso, abriendo una shell `/bin/sh` o cerrándose abruptamente si el shellcode termina).
-   - Puedes usar `strace -p <PID>` antes de la inyección para ver cómo se comportaba el proceso legítimo.
+### Paso 2: Ejecutar el proceso objetivo
+En la misma **Terminal 1**, ejecuta el programa víctima:
+```bash
+./target
+```
+*Anota el PID que se muestra en pantalla.*
+
+### Paso 3: Monitoreo en Tiempo Real (strace y htop)
+Ve a la **Terminal 2**. Vamos a observar qué está haciendo el proceso antes de ser inyectado.
+Ejecuta `htop`, presiona `F4` (Filter) y escribe el nombre `target`. Verás el proceso corriendo pacíficamente.
+Presiona `q` para salir de htop.
+
+Ahora, rastreemos sus llamadas al sistema (Syscalls):
+```bash
+strace -p <PID_DEL_TARGET>
+```
+Verás que el proceso está llamando repetidamente a `nanosleep` y `write` (imprimiendo en pantalla). Deja esta terminal abierta.
+
+### Paso 4: Análisis de Memoria antes de la Inyección
+Ve a la **Terminal 3**. Vamos a ver el mapa de memoria del proceso:
+```bash
+cat /proc/<PID_DEL_TARGET>/maps
+```
+Busca las líneas que tienen permisos `r-xp` (lectura y ejecución). Ese es el código legítimo del programa.
+
+### Paso 5: ¡Inyección!
+Abre una **Terminal 4** y ejecuta el script de inyección:
+```bash
+sudo ./ptrace_inject <PID_DEL_TARGET>
+```
+
+### Paso 6: Análisis Post-Inyección (Debugging)
+1. Mira la **Terminal 1**: El programa legítimo dejó de imprimir su mensaje normal y ahora el shellcode inyectado tomó el control.
+2. Mira la **Terminal 2** (`strace`): Verás que el flujo normal de `nanosleep` se interrumpió y de repente apareció una llamada a `execve("/bin/sh")`. ¡Esa es la inyección!
 
 ---
 
 ## Laboratorio 2: LD_PRELOAD (Equivalente a DLL Injection)
 
-En Windows, los atacantes fuerzan la carga de una DLL maliciosa. En Linux, podemos usar la variable de entorno `LD_PRELOAD` para forzar a cualquier comando a cargar nuestra librería compartida (`.so`) antes que `libc`.
+En este laboratorio, secuestraremos la ejecución de un comando estándar (`ls`) forzándolo a cargar nuestra librería maliciosa.
 
-1. **Compilar la librería maliciosa:**
-   ```bash
-   cd ~/lab/src/lab2_ldpreload
-   make
-   ```
+### Paso 1: Preparación
+En la **Terminal 1**:
+```bash
+cd ~/lab/src/lab2_ldpreload
+make
+```
 
-2. **Ejecutar un comando legítimo con inyección:**
-   Ejecuta cualquier comando inofensivo, por ejemplo `ls` o `cat`, pero anteponiendo nuestra librería:
-   ```bash
-   LD_PRELOAD=./malicious.so ls -la
-   ```
+### Paso 2: Ejecución Normal vs Maliciosa
+Ejecuta un `ls` normal:
+```bash
+ls -la
+```
 
-3. **Análisis:**
-   - Verás que **antes** de que `ls` liste los archivos, se ejecuta nuestro código malicioso (que imprime un mensaje y ejecuta `id`).
-   - Esto ocurre porque definimos la función `init()` con `__attribute__((constructor))`, lo que hace que se ejecute inmediatamente al cargar la librería en memoria.
+Ahora, ejecuta el mismo comando forzando la inyección de la librería:
+```bash
+LD_PRELOAD=./malicious.so ls -la
+```
+Verás que el mensaje malicioso se imprime **antes** de que el comando `ls` haga su trabajo.
+
+### Paso 3: Debugging con `ltrace`
+Para ver exactamente cómo la librería intercepta la ejecución, usaremos `ltrace` (Library Trace).
+```bash
+ltrace -S LD_PRELOAD=./malicious.so ls
+```
+Observa el output. Verás que la función `init()` de nuestra librería se ejecuta durante la fase de carga dinámica del sistema operativo, antes de que se llame a la función `main()` de `ls`.
 
 ---
 
 ## Laboratorio 3: Fileless Execution con memfd_create (Process Ghosting)
 
-Los atacantes modernos evitan tocar el disco duro para evadir el antivirus. En Linux, `memfd_create` permite crear un archivo directamente en la memoria RAM.
+Esta técnica ejecuta malware directamente en la RAM sin tocar el disco.
 
-1. **Compilar el código:**
-   ```bash
-   cd ~/lab/src/lab3_memfd
-   make
-   ```
+### Paso 1: Preparación
+En la **Terminal 1**:
+```bash
+cd ~/lab/src/lab3_memfd
+make
+```
 
-2. **Ejecutar el inyector Fileless:**
-   ```bash
-   ./memfd_exec ./dummy_payload
-   ```
+### Paso 2: Ejecutar el inyector Fileless
+```bash
+./memfd_exec ./dummy_payload
+```
 
-3. **Análisis Forense:**
-   Abre una **nueva terminal** mientras el payload sigue corriendo.
-   
-   - Busca el proceso malicioso. Notarás que se ha disfrazado como un proceso del kernel:
-     ```bash
-     ps aux | grep kworker
-     ```
-   - Revisa de dónde se está ejecutando el binario:
-     ```bash
-     ls -l /proc/<PID_DEL_PAYLOAD>/exe
-     ```
-   - Verás algo como: `lrwxrwxrwx ... /proc/1234/exe -> /memfd:kworker/u4:2 (deleted)`.
-   - El `(deleted)` indica que el archivo no existe en el disco duro, vive enteramente en la memoria RAM, lo que lo hace invisible para escaneos de disco tradicionales.
+### Paso 3: Análisis Forense de Memoria
+Ve a la **Terminal 2**. El malware está corriendo, pero se ha disfrazado.
+Vamos a buscarlo en los procesos:
+```bash
+ps aux | grep kworker
+```
+Verás un proceso llamado `kworker/u4:2`. Parece un proceso legítimo del kernel de Linux, pero es nuestro malware. Toma nota de su PID.
+
+### Paso 4: Descubriendo el engaño en `/proc`
+Los Threat Hunters usan el sistema de archivos `/proc` para descubrir estas anomalías.
+Ejecuta:
+```bash
+ls -l /proc/<PID_DEL_MALWARE>/exe
+```
+El resultado será algo como:
+`lrwxrwxrwx 1 student student 0 ... /proc/<PID>/exe -> /memfd:kworker/u4:2 (deleted)`
+
+**¿Qué significa esto?**
+El enlace simbólico `exe` apunta al archivo ejecutable original. Al decir `(deleted)` y apuntar a `/memfd:`, nos confirma que este proceso no se ejecutó desde el disco duro, sino desde un archivo anónimo creado en la memoria RAM. ¡Acabas de cazar un malware fileless!

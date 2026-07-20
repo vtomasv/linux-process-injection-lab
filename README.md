@@ -1,39 +1,71 @@
 # Laboratorio Avanzado de Process Injection en Linux (MAR404)
 
-Este repositorio contiene un entorno Docker aislado y laboratorios prácticos para demostrar técnicas avanzadas de inyección de procesos y malware "fileless" en sistemas Linux. 
-
-Estas técnicas son los equivalentes directos a las metodologías utilizadas por APTs en Windows (T1055).
+Este repositorio contiene un entorno Docker aislado con interfaz gráfica (noVNC) y laboratorios prácticos para demostrar técnicas avanzadas de inyección de procesos en sistemas Linux. Estas técnicas son los equivalentes directos a las metodologías utilizadas por APTs en Windows (MITRE ATT&CK T1055).
 
 ## Requisitos Previos
-- Docker
+
+- Docker Desktop (Windows/Mac) o Docker Engine (Linux)
 - Docker Compose
 
 ## Inicio Rápido
 
-1. Clona este repositorio o extrae el archivo.
-2. Inicia el entorno:
-   ```bash
-   docker-compose up -d
-   ```
-3. Accede a la interfaz gráfica a través de tu navegador:
-   **http://localhost:8080**
-4. Contraseña de VNC: `infected`
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/vtomasv/linux-process-injection-lab.git
+cd linux-process-injection-lab
 
-## Estructura de los Laboratorios
+# 2. Construir e iniciar el entorno
+docker-compose up -d
 
-El código fuente de los laboratorios se encuentra en la carpeta `src/`. Las guías paso a paso están en la carpeta `docs/`.
+# 3. Acceder a la interfaz gráfica
+# Abre tu navegador en: http://localhost:8080
+# Contraseña VNC: infected
+```
 
-- **Lab 1: Ptrace Injection** (`src/lab1_ptrace`)
-  - Equivalente a *Classic Process Injection* (T1055.001) y *Thread Execution Hijacking* (T1055.003).
-  - Demuestra cómo un proceso puede adjuntarse a otro, modificar sus registros y escribir shellcode directamente en su memoria de ejecución.
+## Estructura del Repositorio
 
-- **Lab 2: LD_PRELOAD Injection** (`src/lab2_ldpreload`)
-  - Equivalente a *DLL Injection* (T1055.001).
-  - Demuestra cómo forzar a un proceso legítimo a cargar una librería compartida maliciosa (.so) antes que las librerías estándar.
+```
+linux-process-injection-lab/
+├── docker/
+│   ├── Dockerfile            # Imagen con GUI (XFCE4), compiladores y herramientas
+│   └── supervisord.conf      # Configuración de servicios (VNC, noVNC, XFCE)
+├── docker-compose.yml        # Orquestación con privilegios SYS_PTRACE
+├── src/
+│   ├── lab1_ptrace/          # T1055.001/003: Inyección clásica con ptrace
+│   │   ├── target.c          # Proceso víctima
+│   │   ├── ptrace_inject.c   # Inyector de shellcode
+│   │   └── Makefile
+│   ├── lab2_ldpreload/       # T1055.001: DLL Injection equivalente
+│   │   ├── malicious.c       # Librería maliciosa (.so)
+│   │   └── Makefile
+│   └── lab3_memfd/           # T1055.012: Fileless / Process Ghosting
+│       ├── memfd_exec.c      # Ejecutor en memoria
+│       ├── dummy_payload.c   # Payload de demostración
+│       └── Makefile
+├── docs/
+│   └── GUIA_DEL_ESTUDIANTE.md  # Instrucciones paso a paso con debugging
+└── README.md
+```
 
-- **Lab 3: Fileless Execution (memfd_create)** (`src/lab3_memfd`)
-  - Equivalente a *Process Ghosting / Hollowing* (T1055.012).
-  - Demuestra cómo crear un archivo anónimo directamente en RAM, escribir un binario en él y ejecutarlo, evadiendo la detección basada en disco.
+## Herramientas Preinstaladas en el Contenedor
+
+| Herramienta | Propósito |
+|-------------|-----------|
+| `gcc` / `make` | Compilación de los programas en C |
+| `gdb` | Debugger para inspeccionar registros y memoria |
+| `strace` | Rastreo de llamadas al sistema (syscalls) |
+| `ltrace` | Rastreo de llamadas a librerías dinámicas |
+| `htop` | Monitor de procesos en tiempo real (visual) |
+| `lsof` | Listar archivos abiertos por un proceso |
+| `objdump` / `readelf` | Análisis de binarios ELF |
+| `hexdump` | Visualización hexadecimal de memoria |
 
 ## Instrucciones para los Alumnos
-Abre la terminal dentro del entorno web (noVNC) y sigue las instrucciones detalladas en `docs/GUIA_DEL_ESTUDIANTE.md`.
+
+Una vez dentro del entorno gráfico (noVNC), abre el emulador de terminal y sigue las instrucciones detalladas en `docs/GUIA_DEL_ESTUDIANTE.md`.
+
+## Detener el Entorno
+
+```bash
+docker-compose down
+```
