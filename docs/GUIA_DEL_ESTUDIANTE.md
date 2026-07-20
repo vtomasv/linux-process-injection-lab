@@ -122,3 +122,57 @@ El resultado será algo como:
 
 **¿Qué significa esto?**
 El enlace simbólico `exe` apunta al archivo ejecutable original. Al decir `(deleted)` y apuntar a `/memfd:`, nos confirma que este proceso no se ejecutó desde el disco duro, sino desde un archivo anónimo creado en la memoria RAM. ¡Acabas de cazar un malware fileless!
+
+---
+
+## Laboratorio 4: Simulación Visual (Phishing + Ransomware)
+
+Este laboratorio es altamente visual y simula un ataque completo del mundo real: un usuario recibe un correo de phishing, abre un adjunto malicioso y este inyecta código en un proceso legítimo para desplegar un Ransomware en toda la pantalla.
+
+### Paso 1: Ejecutar el Simulador de Correo
+En la **Terminal 1**, navega a la carpeta del Lab 4 y ejecuta el simulador:
+```bash
+cd ~/lab/src/lab4_phishing_gui
+python3 email_simulator.py
+```
+
+### Paso 2: Caer en la trampa
+1. Presiona `ENTER` para abrir el correo sospechoso de "Recursos Humanos".
+2. Lee los indicadores de phishing marcados en rojo.
+3. Presiona `1` para simular que el usuario decide abrir el archivo adjunto.
+
+### Paso 3: Observar el Ataque Visual
+- Verás que se abre el **bloc de notas legítimo de Linux (`mousepad`)** mostrando un supuesto error al leer el PDF. El usuario pensará "oh, el archivo está dañado" y lo dejará abierto o intentará cerrarlo.
+- **¡Pero la inyección ya ocurrió!** En segundo plano, el adjunto malicioso inyectó una librería en `mousepad`.
+- Unos segundos después, **la pantalla completa se pondrá roja con un mensaje de Ransomware**.
+- *(Nota: No te asustes, es una simulación. No cifrará tus archivos reales. Puedes presionar `ESC` o `q` en cualquier momento para cerrar la pantalla roja).*
+
+### Paso 4: Análisis Forense (Threat Hunting)
+Deja la pantalla roja de ransomware abierta (o muévela a un lado si tu gestor de ventanas lo permite, aunque está en pantalla completa, puedes abrir otra terminal con `Ctrl+Alt+T` o cambiar de espacio de trabajo).
+
+En la **Terminal 2**, vamos a cazar al proceso malicioso:
+
+**A. Ver el árbol de procesos:**
+```bash
+htop
+```
+*(Presiona `F5` para activar la vista de árbol. Busca `mousepad`. Verás que el script de python del ransomware está "colgando" como hijo directo de `mousepad`. ¡El bloc de notas está ejecutando el ransomware!)*. Presiona `q` para salir.
+
+**B. Ver los archivos abiertos por el proceso legítimo:**
+Primero, obtén el PID de `mousepad`:
+```bash
+ps aux | grep mousepad
+```
+Luego usa `lsof` (reemplaza `<PID>`):
+```bash
+lsof -p <PID>
+```
+Busca en la lista de archivos. Deberías ver que `mousepad` tiene cargada una librería sospechosa llamada `libmalware.so` que normalmente no debería estar allí.
+
+**C. Revisar la memoria mapeada:**
+```bash
+cat /proc/<PID>/maps | grep libmalware
+```
+Esto confirma que la librería maliciosa fue inyectada en el espacio de memoria del proceso legítimo, logrando evadir la detección inicial al esconderse dentro de un programa confiable.
+
+Para terminar, vuelve a la pantalla del Ransomware y presiona `ESC` para cerrarla.

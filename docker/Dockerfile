@@ -7,15 +7,18 @@ ENV VNC_PORT=5900
 ENV NOVNC_PORT=8080
 
 # ============================================================
-# FASE 1: Instalar paquetes base del sistema y GUI
+# FASE 1: Instalar paquetes base del sistema, GUI y herramientas
 # ============================================================
 RUN apt-get update && apt-get install -y \
     xfce4 \
     xfce4-terminal \
+    mousepad \
     tightvncserver \
     novnc \
     websockify \
-    python3 python3-pip \
+    python3 \
+    python3-pip \
+    python3-tk \
     build-essential \
     gcc \
     g++ \
@@ -45,22 +48,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# FASE 2: Instalar herramientas de análisis adicionales
-# ============================================================
-RUN apt-get update && apt-get install -y \
-    linux-tools-generic \
-    elfutils \
-    patchelf \
-    && rm -rf /var/lib/apt/lists/* || true
-
-# ============================================================
-# FASE 3: Crear usuario con privilegios sudo
+# FASE 2: Crear usuario con privilegios sudo
 # ============================================================
 RUN useradd -m -s /bin/bash $USER && \
     echo "$USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # ============================================================
-# FASE 4: Configurar VNC (contraseña: infected)
+# FASE 3: Configurar VNC (contraseña: infected)
 # ============================================================
 RUN mkdir -p $HOME/.vnc && \
     echo "infected" | vncpasswd -f > $HOME/.vnc/passwd && \
@@ -68,17 +62,14 @@ RUN mkdir -p $HOME/.vnc && \
     chown -R $USER:$USER $HOME/.vnc
 
 # ============================================================
-# FASE 5: Copiar configuración de supervisor
+# FASE 4: Copiar configuración de supervisor
 # ============================================================
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # ============================================================
-# FASE 6: Configurar el entorno de trabajo
+# FASE 5: Configurar el entorno de trabajo
 # ============================================================
 WORKDIR /home/student/lab
-
-# Deshabilitar ptrace_scope dentro del contenedor (permite inyección entre procesos)
-RUN echo "kernel.yama.ptrace_scope = 0" >> /etc/sysctl.conf || true
 
 EXPOSE 8080
 
