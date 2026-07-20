@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  injection-lab:
+    build: 
+      context: ./docker
+    container_name: linux-injection-lab
+    ports:
+      - "8080:8080" # noVNC port
+    volumes:
+      - ./src:/home/student/lab/src
+      - ./docs:/home/student/lab/docs
+    # Privileged mode and SYS_PTRACE are required to allow ptrace injection across processes
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    # Disable ptrace scope restriction for the container
+    sysctls:
+      - kernel.yama.ptrace_scope=0
+    restart: unless-stopped
