@@ -38,7 +38,7 @@ RUN apt-get update && apt-get install -y \
     procps \
     nasm \
     xterm \
-    hexdump \
+    bsdmainutils \
     binutils \
     file \
     lsof \
